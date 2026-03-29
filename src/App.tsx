@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { API_URL, apiRequest } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { API_URL, apiGet, apiRequest } from "./api";
 import { useStore } from "./store";
 
 type StatusKind = "ok" | "err" | "neutral";
@@ -12,7 +12,21 @@ interface StatusState {
 interface RoleInfo {
   cardName: string;
   imageUrl: string | null;
+  elixir: number | null;
 }
+
+interface RoomListItem {
+  room_id: string;
+  room_name: string;
+  host_id: string;
+}
+
+interface Participant {
+  name: string;
+  player_id: string;
+}
+
+const JOIN_PASSWORD_LEN = 5;
 
 const localCardImages = import.meta.glob("./assets/cards/*.{png,jpg,jpeg,webp,avif}", {
   eager: true,
@@ -39,29 +53,56 @@ function toAbsoluteImageUrl(imagePath: string): string {
   return `${API_URL}${normalizedPath}`;
 }
 
-function extractRoleInfo(data: any): RoleInfo {
-  const cardName =
+/** Карта по API — не подставляем `role` (там «Player» и т.п., не карта). */
+function extractRoleInfo(data: any): RoleInfo | null {
+  const raw =
     data?.card_name ??
     data?.cardName ??
     data?.name ??
     data?.card ??
-    data?.role ??
-    "unknown";
+    null;
+  if (raw == null || String(raw).trim() === "") return null;
+  if (String(raw).toLowerCase() === "unknown") return null;
+
+  const cardName = String(raw);
 
   const explicitImage =
-    data?.card_image ??
-    data?.cardImage ??
     data?.image_url ??
     data?.imageUrl ??
+    data?.card_image ??
+    data?.cardImage ??
     data?.image ??
     null;
 
+  const elixir =
+    typeof data?.elixir === "number" && Number.isFinite(data.elixir)
+      ? data.elixir
+      : null;
+
   return {
-    cardName: String(cardName),
+    cardName,
     imageUrl: explicitImage
       ? toAbsoluteImageUrl(String(explicitImage))
-      : resolveLocalCardImage(String(cardName)),
+      : resolveLocalCardImage(cardName),
+    elixir,
   };
+}
+
+function hasAssignedCard(data: any): boolean {
+  return extractRoleInfo(data) != null;
+}
+
+/** По ответу get-my-role: идёт ли матч (после game-start). */
+function inferGameStarted(data: any): boolean {
+  const s = String(data?.status ?? "").toLowerCase();
+  if (["active", "started", "playing", "in_game", "running"].includes(s)) {
+    return true;
+  }
+  if (["waiting", "lobby", "idle", "pending", "not_started"].includes(s)) {
+    return false;
+  }
+  if (hasAssignedCard(data)) return true;
+  return false;
 }
 
 async function copyText(text: string, onDone: (msg: string) => void) {
@@ -72,7 +113,7 @@ async function copyText(text: string, onDone: (msg: string) => void) {
       return;
     }
   } catch {
-    // небезопасный контекст (HTTP), отказ разрешения и т.п.
+    // insecure context (HTTP), permission denied, etc.
   }
 
   try {
@@ -102,20 +143,31 @@ export default function App() {
   const {
     playerId,
     roomId,
+    roomName,
     roomPassword,
     setPlayerId,
-    setRoomId,
-    setRoomPassword,
+    setRoom,
+    clearRoom,
     logout,
   } = useStore();
 
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [roomNameCreate, setRoomNameCreate] = useState("");
   const [joinRoomId, setJoinRoomId] = useState("");
   const [joinRoomPassword, setJoinRoomPassword] = useState("");
+  const [rooms, setRooms] = useState<RoomListItem[]>([]);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [participantCount, setParticipantCount] = useState(0);
   const [status, setStatus] = useState<StatusState | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [roleInfo, setRoleInfo] = useState<RoleInfo | null>(null);
+  const [gamePhase, setGamePhase] = useState<
+    "checking" | "waiting" | "running"
+  >("checking");
+  const [participantsLoading, setParticipantsLoading] = useState(true);
+
+  const hadPlayersInRoomRef = useRef(false);
 
   function setOk(text: string) {
     setStatus({ text, kind: "ok" });
@@ -126,6 +178,131 @@ export default function App() {
   function setNeutral(text: string) {
     setStatus({ text, kind: "neutral" });
   }
+
+  const loadRooms = useCallback(async () => {
+    if (!playerId || roomId) return;
+    try {
+      const list = await apiGet("/game/rooms");
+      setRooms(Array.isArray(list) ? list : []);
+    } catch {
+      setRooms([]);
+    }
+  }, [playerId, roomId]);
+
+  const loadParticipants = useCallback(async () => {
+    if (!playerId || !roomId) return;
+    try {
+      const data = await apiGet(
+        `/game/room-participants/${encodeURIComponent(roomId)}`,
+      );
+      const players = Array.isArray(data?.players) ? data.players : [];
+      const count =
+        typeof data?.count === "number" ? data.count : players.length;
+
+      if (players.length > 0) {
+        hadPlayersInRoomRef.current = true;
+      }
+
+      if (
+        players.length === 0 &&
+        count === 0 &&
+        hadPlayersInRoomRef.current
+      ) {
+        setRoleInfo(null);
+        clearRoom();
+        setGamePhase("checking");
+        setErr("The host left — the room is closed.");
+        return;
+      }
+
+      setParticipants(players);
+      setParticipantCount(count);
+    } catch {
+      setParticipants([]);
+    } finally {
+      setParticipantsLoading(false);
+    }
+  }, [playerId, roomId, clearRoom]);
+
+  useEffect(() => {
+    if (!roomId) {
+      setParticipants([]);
+      setParticipantCount(0);
+      setGamePhase("checking");
+      hadPlayersInRoomRef.current = false;
+      setParticipantsLoading(true);
+    } else {
+      hadPlayersInRoomRef.current = false;
+      setParticipantsLoading(true);
+      setGamePhase("checking");
+    }
+  }, [roomId]);
+
+  const syncGameStatus = useCallback(async () => {
+    if (!playerId || !roomId) return;
+    try {
+      const res = await fetch(
+        `${API_URL}/game/get-my-role?room_id=${encodeURIComponent(roomId)}&player_id=${encodeURIComponent(playerId)}`,
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setGamePhase("waiting");
+        return;
+      }
+      setGamePhase(inferGameStarted(data) ? "running" : "waiting");
+    } catch {
+      setGamePhase("waiting");
+    }
+  }, [playerId, roomId]);
+
+  useEffect(() => {
+    void loadRooms();
+  }, [loadRooms]);
+
+  useEffect(() => {
+    if (!playerId || roomId) return;
+    const t = window.setInterval(() => void loadRooms(), 8000);
+    return () => window.clearInterval(t);
+  }, [playerId, roomId, loadRooms]);
+
+  useEffect(() => {
+    void loadParticipants();
+  }, [loadParticipants]);
+
+  useEffect(() => {
+    if (!roomId || !playerId) return;
+    const t = window.setInterval(() => void loadParticipants(), 4000);
+    return () => window.clearInterval(t);
+  }, [roomId, playerId, loadParticipants]);
+
+  useEffect(() => {
+    if (!roomId || !playerId) return;
+    void syncGameStatus();
+  }, [roomId, playerId, syncGameStatus]);
+
+  useEffect(() => {
+    if (!roomId || !playerId) return;
+    const t = window.setInterval(() => void syncGameStatus(), 5000);
+    return () => window.clearInterval(t);
+  }, [roomId, playerId, syncGameStatus]);
+
+  useEffect(() => {
+    if (!roomId || !playerId) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(
+        `${API_URL}/game/room-participants/${encodeURIComponent(roomId)}`,
+      );
+      if (cancelled) return;
+      if (res.status === 404) {
+        clearRoom();
+        setErr("Room no longer exists or you were removed.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId, playerId, clearRoom]);
 
   async function register() {
     setBusy("register");
@@ -147,7 +324,8 @@ export default function App() {
         password,
       });
       setPlayerId(res.player_id);
-      setOk(`Welcome back. Player ID saved on this device.`);
+      const uname = res.username ?? name;
+      setOk(`Welcome, ${uname}. Player ID saved on this device.`);
     } catch {
       setErr("Login failed. Wrong password or user not found.");
     } finally {
@@ -157,15 +335,25 @@ export default function App() {
 
   async function createRoom() {
     if (!playerId) return;
+    const rn = roomNameCreate.trim();
+    if (!rn) {
+      setErr("Enter a room name.");
+      return;
+    }
     setBusy("create");
     try {
       const res = await apiRequest("/game/create-room", "POST", {
         player_id: playerId,
+        room_name: rn,
       });
-      setRoomId(res.room_id);
-      setRoomPassword(res.password ?? null);
+      setRoom({
+        roomId: res.room_id,
+        roomName: res.room_name ?? rn,
+        roomPassword: res.password ?? null,
+      });
       setRoleInfo(null);
-      setOk("Room created. Share the password with friends.");
+      setJoinRoomPassword("");
+      setOk("Room created. Share the 5-character password.");
     } catch {
       setErr("Could not create room.");
     } finally {
@@ -175,19 +363,51 @@ export default function App() {
 
   async function joinRoom() {
     if (!playerId) return;
+    if (!joinRoomId.trim()) {
+      setErr("Pick a room or enter room ID.");
+      return;
+    }
+    if (joinRoomPassword.length !== JOIN_PASSWORD_LEN) {
+      setErr(`Password must be exactly ${JOIN_PASSWORD_LEN} characters.`);
+      return;
+    }
     setBusy("join");
     try {
-      const res = await apiRequest("/game/join-room", "POST", {
+      await apiRequest("/game/join-room", "POST", {
         player_id: playerId,
         password: joinRoomPassword,
-        room_id: joinRoomId,
+        room_id: joinRoomId.trim(),
       });
-      setRoomId(res.room_id ?? joinRoomId);
-      setRoomPassword(null);
+      const picked = rooms.find((r) => r.room_id === joinRoomId.trim());
+      setRoom({
+        roomId: joinRoomId.trim(),
+        roomName: picked?.room_name ?? null,
+        roomPassword: null,
+      });
       setRoleInfo(null);
+      setJoinRoomPassword("");
       setOk("You joined the room.");
     } catch {
       setErr("Could not join — check room ID and password.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function leaveRoom() {
+    if (!playerId || !roomId) return;
+    setBusy("leave");
+    try {
+      await apiRequest("/game/leave-room", "POST", {
+        player_id: playerId,
+        room_id: roomId,
+      });
+      clearRoom();
+      setRoleInfo(null);
+      setOk("You left the room.");
+      void loadRooms();
+    } catch {
+      setErr("Could not leave the room.");
     } finally {
       setBusy(null);
     }
@@ -202,6 +422,8 @@ export default function App() {
         { method: "POST" },
       );
       if (!res.ok) throw new Error("bad");
+      setGamePhase("running");
+      void syncGameStatus();
       setOk("Match started.");
     } catch {
       setErr("Could not start the game.");
@@ -219,7 +441,27 @@ export default function App() {
       );
       const data = await res.json();
       if (!res.ok) throw new Error("bad");
+
+      const started = inferGameStarted(data);
+      setGamePhase(started ? "running" : "waiting");
+
+      if (!started) {
+        setRoleInfo(null);
+        setNeutral(
+          "The match hasn’t started yet — wait until the host starts the game.",
+        );
+        return;
+      }
+
       const parsed = extractRoleInfo(data);
+      if (!parsed) {
+        setRoleInfo(null);
+        setNeutral(
+          "The game has started, but your card isn’t assigned yet — try again in a moment.",
+        );
+        return;
+      }
+
       setRoleInfo(parsed);
       setOk(`Your card: ${parsed.cardName}`);
     } catch {
@@ -314,7 +556,7 @@ export default function App() {
           </section>
         )}
 
-        {playerId && (
+        {playerId && !roomId && (
           <section className="panel" aria-labelledby="lobby-heading">
             <div className="panel__head">
               <h2 id="lobby-heading" className="panel__title">
@@ -339,23 +581,68 @@ export default function App() {
                   <button
                     type="button"
                     className="btn btn--ghost btn--icon"
-                    onClick={() =>
-                      copyText(playerId, (m) => setNeutral(m))
-                    }
+                    onClick={() => copyText(playerId, (m) => setNeutral(m))}
                   >
                     Copy
                   </button>
                 </div>
               </div>
             </div>
+
+            <div className="divider" />
+            <div className="panel__head">
+              <h3 className="panel__title panel__title--sub">Open rooms</h3>
+              <button
+                type="button"
+                className="btn btn--ghost btn--icon"
+                onClick={() => void loadRooms()}
+              >
+                Refresh
+              </button>
+            </div>
+            {rooms.length === 0 ? (
+              <p className="muted">No rooms yet. Create one or wait for a host.</p>
+            ) : (
+              <ul className="room-list">
+                {rooms.map((r) => (
+                  <li key={r.room_id}>
+                    <button
+                      type="button"
+                      className={
+                        joinRoomId === r.room_id
+                          ? "room-list__item room-list__item--active"
+                          : "room-list__item"
+                      }
+                      onClick={() => {
+                        setJoinRoomId(r.room_id);
+                        setNeutral(`Selected: ${r.room_name}`);
+                      }}
+                    >
+                      <span className="room-list__name">{r.room_name}</span>
+                      <span className="room-list__meta">{r.room_id}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <p className="muted stack-top-sm">
+              Tap a room, then enter the 5-character password to join.
+            </p>
+
             <div className="divider" />
             <div className="field">
-              <label className="field__label" htmlFor="create-hint">
-                Host
+              <label className="field__label" htmlFor="create-name">
+                Create room
               </label>
-              <p id="create-hint" className="muted">
-                Create a private room — you will get a password to share.
-              </p>
+              <input
+                id="create-name"
+                className="input"
+                placeholder="Room name (1–30 characters)"
+                maxLength={30}
+                value={roomNameCreate}
+                onChange={(e) => setRoomNameCreate(e.target.value)}
+              />
             </div>
             <div className="actions">
               <button
@@ -367,30 +654,34 @@ export default function App() {
                 {busy === "create" ? "Creating…" : "Create room"}
               </button>
             </div>
+
             <div className="divider" />
             <div className="field">
               <label className="field__label" htmlFor="join-id">
-                Join with code
+                Room ID
               </label>
               <input
                 id="join-id"
                 className="input"
-                placeholder="Room ID"
+                placeholder="From the list or paste"
                 value={joinRoomId}
                 onChange={(e) => setJoinRoomId(e.target.value)}
               />
             </div>
             <div className="field">
               <label className="field__label" htmlFor="join-pass">
-                Room password
+                Room password ({JOIN_PASSWORD_LEN} characters)
               </label>
               <input
                 id="join-pass"
                 className="input"
-                type="password"
-                placeholder="From the host"
+                autoComplete="off"
+                placeholder="•••••"
+                maxLength={JOIN_PASSWORD_LEN}
                 value={joinRoomPassword}
-                onChange={(e) => setJoinRoomPassword(e.target.value)}
+                onChange={(e) =>
+                  setJoinRoomPassword(e.target.value.slice(0, JOIN_PASSWORD_LEN))
+                }
               />
             </div>
             <div className="actions">
@@ -412,11 +703,60 @@ export default function App() {
               <h2 id="room-heading" className="panel__title">
                 Room
               </h2>
+              <button
+                type="button"
+                className="btn btn--ghost btn--icon"
+                disabled={busy !== null}
+                onClick={leaveRoom}
+              >
+                {busy === "leave" ? "…" : "Leave"}
+              </button>
             </div>
             <div className="room-hero">
-              <div className="room-hero__label">Room ID</div>
-              <div className="room-hero__id">{roomId}</div>
+              <div className="room-hero__label">Room</div>
+              <div className="room-hero__id">
+                {roomName || roomId}
+              </div>
+              {roomName && (
+                <p className="muted room-hero__sub">
+                  ID: <code className="room-hero__code">{roomId}</code>
+                </p>
+              )}
             </div>
+
+            <div
+              className={`game-phase game-phase--${gamePhase}`}
+              role="status"
+            >
+              {gamePhase === "checking" && "Checking match status…"}
+              {gamePhase === "waiting" && "Waiting for the host to start the match."}
+              {gamePhase === "running" && "Game in progress — you can reveal your card."}
+            </div>
+
+            <div className="participants stack-top">
+              <div className="participants__head">
+                <span className="field__label participants__title">
+                  Players ({participantCount})
+                </span>
+              </div>
+              {participantsLoading && participants.length === 0 ? (
+                <p className="muted">Loading players…</p>
+              ) : participants.length === 0 ? (
+                <p className="muted">No players in the list.</p>
+              ) : (
+                <ul className="participants__list">
+                  {participants.map((p) => (
+                    <li key={p.player_id} className="participants__row">
+                      <span className="participants__name">{p.name}</span>
+                      {p.player_id === playerId && (
+                        <span className="participants__you">you</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             <div className="kv stack-top">
               <div className="kv__row">
                 <span className="kv__label">Copy ID</span>
@@ -454,6 +794,9 @@ export default function App() {
                 <div className="card-view">
                   <div className="card-view__label">Your card</div>
                   <div className="card-view__name">{roleInfo.cardName}</div>
+                  {roleInfo.elixir != null && (
+                    <p className="card-view__elixir">Elixir: {roleInfo.elixir}</p>
+                  )}
                   {roleInfo.imageUrl ? (
                     <img
                       className="card-view__image"
@@ -462,7 +805,7 @@ export default function App() {
                     />
                   ) : (
                     <div className="card-view__placeholder">
-                      No card image yet for this card name.
+                      No card image for this card.
                     </div>
                   )}
                 </div>
@@ -481,18 +824,31 @@ export default function App() {
               <button
                 type="button"
                 className="btn btn--secondary"
-                disabled={busy !== null}
+                disabled={
+                  busy !== null ||
+                  gamePhase === "checking" ||
+                  gamePhase === "waiting"
+                }
                 onClick={getRole}
+                title={
+                  gamePhase !== "running"
+                    ? "Available after the host starts the game"
+                    : undefined
+                }
               >
-                {busy === "role" ? "Loading…" : "Reveal my role"}
+                {busy === "role"
+                  ? "Loading…"
+                  : gamePhase !== "running"
+                    ? "Reveal my card (after start)"
+                    : "Reveal my card"}
               </button>
             </div>
           </section>
         )}
 
         <p className="footer-note">
-          Player ID is stored locally — no token. API:{" "}
-          <span className="footer-note__api">{API_URL}</span>
+          Player ID and room are saved locally — refresh keeps you in the room.
+          API: <span className="footer-note__api">{API_URL}</span>
         </p>
       </div>
     </div>

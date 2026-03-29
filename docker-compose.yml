@@ -1,0 +1,7 @@
+# Только фронт (nginx). FastAPI крутится отдельно — укажи URL API в src/api.ts или через build-args.
+services:
+  frontend:
+    build: .
+    image: clash-royale-imposter-frontend
+    ports:
+      - "${PORT:-8080}:80"
