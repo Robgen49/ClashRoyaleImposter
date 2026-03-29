@@ -109,7 +109,7 @@ async function copyText(text: string, onDone: (msg: string) => void) {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
-      onDone("Copied to clipboard.");
+      onDone("Скопировано в буфер обмена.");
       return;
     }
   } catch {
@@ -131,11 +131,11 @@ async function copyText(text: string, onDone: (msg: string) => void) {
     document.body.removeChild(ta);
     onDone(
       ok
-        ? "Copied to clipboard."
-        : "Could not copy — select the text manually.",
+        ? "Скопировано в буфер обмена."
+        : "Не удалось скопировать — выделите текст вручную.",
     );
   } catch {
-    onDone("Could not copy.");
+    onDone("Не удалось скопировать.");
   }
 }
 
@@ -211,7 +211,7 @@ export default function App() {
         setRoleInfo(null);
         clearRoom();
         setGamePhase("checking");
-        setErr("The host left — the room is closed.");
+        setErr("Хост вышел — комната закрыта.");
         return;
       }
 
@@ -296,7 +296,7 @@ export default function App() {
       if (cancelled) return;
       if (res.status === 404) {
         clearRoom();
-        setErr("Room no longer exists or you were removed.");
+        setErr("Комната не найдена или вы из неё исключены.");
       }
     })();
     return () => {
@@ -308,9 +308,9 @@ export default function App() {
     setBusy("register");
     try {
       await apiRequest("/auth/player-reg", "POST", { name, password });
-      setOk("Account created. You can sign in now.");
+      setOk("Аккаунт создан. Можно войти.");
     } catch {
-      setErr("Registration failed. Check name length (3–20) and password (5+).");
+      setErr("Не удалось зарегистрироваться. Имя 3–20 символов, пароль от 5.");
     } finally {
       setBusy(null);
     }
@@ -325,9 +325,9 @@ export default function App() {
       });
       setPlayerId(res.player_id);
       const uname = res.username ?? name;
-      setOk(`Welcome, ${uname}. Player ID saved on this device.`);
+      setOk(`С возвращением, ${uname}. ID игрока сохранён на этом устройстве.`);
     } catch {
-      setErr("Login failed. Wrong password or user not found.");
+      setErr("Не удалось войти. Неверный пароль или пользователь не найден.");
     } finally {
       setBusy(null);
     }
@@ -337,7 +337,7 @@ export default function App() {
     if (!playerId) return;
     const rn = roomNameCreate.trim();
     if (!rn) {
-      setErr("Enter a room name.");
+      setErr("Введите название комнаты.");
       return;
     }
     setBusy("create");
@@ -353,9 +353,9 @@ export default function App() {
       });
       setRoleInfo(null);
       setJoinRoomPassword("");
-      setOk("Room created. Share the 5-character password.");
+      setOk("Комната создана. Поделитесь 5-символьным паролем.");
     } catch {
-      setErr("Could not create room.");
+      setErr("Не удалось создать комнату.");
     } finally {
       setBusy(null);
     }
@@ -364,11 +364,11 @@ export default function App() {
   async function joinRoom() {
     if (!playerId) return;
     if (!joinRoomId.trim()) {
-      setErr("Pick a room or enter room ID.");
+      setErr("Выберите комнату из списка или введите её ID.");
       return;
     }
     if (joinRoomPassword.length !== JOIN_PASSWORD_LEN) {
-      setErr(`Password must be exactly ${JOIN_PASSWORD_LEN} characters.`);
+      setErr(`Пароль должен быть ровно ${JOIN_PASSWORD_LEN} символов.`);
       return;
     }
     setBusy("join");
@@ -386,9 +386,9 @@ export default function App() {
       });
       setRoleInfo(null);
       setJoinRoomPassword("");
-      setOk("You joined the room.");
+      setOk("Вы вошли в комнату.");
     } catch {
-      setErr("Could not join — check room ID and password.");
+      setErr("Не удалось войти — проверьте ID комнаты и пароль.");
     } finally {
       setBusy(null);
     }
@@ -404,10 +404,10 @@ export default function App() {
       });
       clearRoom();
       setRoleInfo(null);
-      setOk("You left the room.");
+      setOk("Вы вышли из комнаты.");
       void loadRooms();
     } catch {
-      setErr("Could not leave the room.");
+      setErr("Не удалось выйти из комнаты.");
     } finally {
       setBusy(null);
     }
@@ -424,9 +424,9 @@ export default function App() {
       if (!res.ok) throw new Error("bad");
       setGamePhase("running");
       void syncGameStatus();
-      setOk("Match started.");
+      setOk("Матч начался.");
     } catch {
-      setErr("Could not start the game.");
+      setErr("Не удалось начать игру.");
     } finally {
       setBusy(null);
     }
@@ -448,7 +448,7 @@ export default function App() {
       if (!started) {
         setRoleInfo(null);
         setNeutral(
-          "The match hasn’t started yet — wait until the host starts the game.",
+          "Матч ещё не начался — дождитесь, пока хост нажмёт «Начать игру».",
         );
         return;
       }
@@ -457,15 +457,15 @@ export default function App() {
       if (!parsed) {
         setRoleInfo(null);
         setNeutral(
-          "The game has started, but your card isn’t assigned yet — try again in a moment.",
+          "Игра началась, но карта ещё не назначена — попробуйте через пару секунд.",
         );
         return;
       }
 
       setRoleInfo(parsed);
-      setOk(`Your card: ${parsed.cardName}`);
+      setOk(`Ваша карта: ${parsed.cardName}`);
     } catch {
-      setErr("Could not load role yet.");
+      setErr("Пока не удалось загрузить роль.");
     } finally {
       setBusy(null);
     }
@@ -483,13 +483,12 @@ export default function App() {
       <div className="app__bg" aria-hidden />
       <div className="app__inner">
         <header className="brand">
-          <div className="brand__badge">Social deduction</div>
+          <div className="brand__badge">only funs</div>
           <h1 className="brand__title">
             Clash Royale <span>Imposter</span>
           </h1>
           <p className="brand__subtitle">
-            Enter the arena, create a room, and find who is lying before the
-            crown falls.
+            Игра в шпиона
           </p>
         </header>
 
@@ -504,26 +503,26 @@ export default function App() {
           <section className="panel" aria-labelledby="auth-heading">
             <div className="panel__head">
               <h2 id="auth-heading" className="panel__title">
-                Sign in
+                Вход
               </h2>
-              <span className="panel__hint">3–20 chars · password 5+</span>
+              <span className="panel__hint">3–20 символов · пароль от 5</span>
             </div>
             <div className="field">
               <label className="field__label" htmlFor="auth-name">
-                Display name
+                Имя
               </label>
               <input
                 id="auth-name"
                 className="input"
                 autoComplete="username"
-                placeholder="Your name"
+                placeholder="Ваш ник"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
             <div className="field">
               <label className="field__label" htmlFor="auth-pass">
-                Password
+                Пароль
               </label>
               <input
                 id="auth-pass"
@@ -542,7 +541,7 @@ export default function App() {
                 disabled={busy !== null}
                 onClick={login}
               >
-                {busy === "login" ? "Signing in…" : "Sign in"}
+                {busy === "login" ? "Вход…" : "Войти"}
               </button>
               <button
                 type="button"
@@ -550,7 +549,7 @@ export default function App() {
                 disabled={busy !== null}
                 onClick={register}
               >
-                {busy === "register" ? "Creating…" : "Create account"}
+                {busy === "register" ? "Создание…" : "Регистрация"}
               </button>
             </div>
           </section>
@@ -560,22 +559,22 @@ export default function App() {
           <section className="panel" aria-labelledby="lobby-heading">
             <div className="panel__head">
               <h2 id="lobby-heading" className="panel__title">
-                Lobby
+                Лобби
               </h2>
               <button
                 type="button"
                 className="btn btn--ghost btn--icon"
                 onClick={() => {
                   logout();
-                  setNeutral("Signed out.");
+                  setNeutral("Вы вышли из аккаунта.");
                 }}
               >
-                Sign out
+                Выйти
               </button>
             </div>
             <div className="kv">
               <div className="kv__row">
-                <span className="kv__label">Player ID</span>
+                <span className="kv__label">ID игрока</span>
                 <code className="kv__value">{playerId}</code>
                 <div className="kv__actions">
                   <button
@@ -583,7 +582,7 @@ export default function App() {
                     className="btn btn--ghost btn--icon"
                     onClick={() => copyText(playerId, (m) => setNeutral(m))}
                   >
-                    Copy
+                    Копировать
                   </button>
                 </div>
               </div>
@@ -591,17 +590,17 @@ export default function App() {
 
             <div className="divider" />
             <div className="panel__head">
-              <h3 className="panel__title panel__title--sub">Open rooms</h3>
+              <h3 className="panel__title panel__title--sub">Открытые комнаты</h3>
               <button
                 type="button"
                 className="btn btn--ghost btn--icon"
                 onClick={() => void loadRooms()}
               >
-                Refresh
+                Обновить
               </button>
             </div>
             {rooms.length === 0 ? (
-              <p className="muted">No rooms yet. Create one or wait for a host.</p>
+              <p className="muted">Комнат пока нет — создайте свою или подождите хоста.</p>
             ) : (
               <ul className="room-list">
                 {rooms.map((r) => (
@@ -615,7 +614,7 @@ export default function App() {
                       }
                       onClick={() => {
                         setJoinRoomId(r.room_id);
-                        setNeutral(`Selected: ${r.room_name}`);
+                        setNeutral(`Выбрано: ${r.room_name}`);
                       }}
                     >
                       <span className="room-list__name">{r.room_name}</span>
@@ -627,18 +626,18 @@ export default function App() {
             )}
 
             <p className="muted stack-top-sm">
-              Tap a room, then enter the 5-character password to join.
+              Нажмите на комнату и введите 5-символьный пароль для входа.
             </p>
 
             <div className="divider" />
             <div className="field">
               <label className="field__label" htmlFor="create-name">
-                Create room
+                Создать комнату
               </label>
               <input
                 id="create-name"
                 className="input"
-                placeholder="Room name (1–30 characters)"
+                placeholder="Название (1–30 символов)"
                 maxLength={30}
                 value={roomNameCreate}
                 onChange={(e) => setRoomNameCreate(e.target.value)}
@@ -651,26 +650,26 @@ export default function App() {
                 disabled={busy !== null}
                 onClick={createRoom}
               >
-                {busy === "create" ? "Creating…" : "Create room"}
+                {busy === "create" ? "Создание…" : "Создать комнату"}
               </button>
             </div>
 
             <div className="divider" />
             <div className="field">
               <label className="field__label" htmlFor="join-id">
-                Room ID
+                ID комнаты
               </label>
               <input
                 id="join-id"
                 className="input"
-                placeholder="From the list or paste"
+                placeholder="Из списка или вставьте"
                 value={joinRoomId}
                 onChange={(e) => setJoinRoomId(e.target.value)}
               />
             </div>
             <div className="field">
               <label className="field__label" htmlFor="join-pass">
-                Room password ({JOIN_PASSWORD_LEN} characters)
+                Пароль комнаты ({JOIN_PASSWORD_LEN} символов)
               </label>
               <input
                 id="join-pass"
@@ -691,7 +690,7 @@ export default function App() {
                 disabled={busy !== null}
                 onClick={joinRoom}
               >
-                {busy === "join" ? "Joining…" : "Join room"}
+                {busy === "join" ? "Вход…" : "Войти в комнату"}
               </button>
             </div>
           </section>
@@ -701,7 +700,7 @@ export default function App() {
           <section className="panel" aria-labelledby="room-heading">
             <div className="panel__head">
               <h2 id="room-heading" className="panel__title">
-                Room
+                Комната
               </h2>
               <button
                 type="button"
@@ -709,17 +708,17 @@ export default function App() {
                 disabled={busy !== null}
                 onClick={leaveRoom}
               >
-                {busy === "leave" ? "…" : "Leave"}
+                {busy === "leave" ? "…" : "Выйти"}
               </button>
             </div>
             <div className="room-hero">
-              <div className="room-hero__label">Room</div>
+              <div className="room-hero__label">Комната</div>
               <div className="room-hero__id">
                 {roomName || roomId}
               </div>
               {roomName && (
                 <p className="muted room-hero__sub">
-                  ID: <code className="room-hero__code">{roomId}</code>
+                  Ид.: <code className="room-hero__code">{roomId}</code>
                 </p>
               )}
             </div>
@@ -728,28 +727,28 @@ export default function App() {
               className={`game-phase game-phase--${gamePhase}`}
               role="status"
             >
-              {gamePhase === "checking" && "Checking match status…"}
-              {gamePhase === "waiting" && "Waiting for the host to start the match."}
-              {gamePhase === "running" && "Game in progress — you can reveal your card."}
+              {gamePhase === "checking" && "Проверка статуса матча…"}
+              {gamePhase === "waiting" && "Ожидание: хост должен начать матч."}
+              {gamePhase === "running" && "Игра идёт — можно открыть карту."}
             </div>
 
             <div className="participants stack-top">
               <div className="participants__head">
                 <span className="field__label participants__title">
-                  Players ({participantCount})
+                  Игроки ({participantCount})
                 </span>
               </div>
               {participantsLoading && participants.length === 0 ? (
-                <p className="muted">Loading players…</p>
+                <p className="muted">Загрузка списка…</p>
               ) : participants.length === 0 ? (
-                <p className="muted">No players in the list.</p>
+                <p className="muted">В списке никого нет.</p>
               ) : (
                 <ul className="participants__list">
                   {participants.map((p) => (
                     <li key={p.player_id} className="participants__row">
                       <span className="participants__name">{p.name}</span>
                       {p.player_id === playerId && (
-                        <span className="participants__you">you</span>
+                        <span className="participants__you">вы</span>
                       )}
                     </li>
                   ))}
@@ -759,20 +758,20 @@ export default function App() {
 
             <div className="kv stack-top">
               <div className="kv__row">
-                <span className="kv__label">Copy ID</span>
+                <span className="kv__label">Копировать ID</span>
                 <div className="kv__actions kv__actions--push">
                   <button
                     type="button"
                     className="btn btn--ghost btn--icon"
                     onClick={() => copyText(roomId, (m) => setNeutral(m))}
                   >
-                    Copy
+                    Копировать
                   </button>
                 </div>
               </div>
               {roomPassword && (
                 <div className="kv__row">
-                  <span className="kv__label">Password</span>
+                  <span className="kv__label">Пароль</span>
                   <code className="kv__value">{roomPassword}</code>
                   <div className="kv__actions">
                     <button
@@ -782,7 +781,7 @@ export default function App() {
                         copyText(roomPassword, (m) => setNeutral(m))
                       }
                     >
-                      Copy
+                      Копировать
                     </button>
                   </div>
                 </div>
@@ -792,10 +791,10 @@ export default function App() {
             {roleInfo && (
               <>
                 <div className="card-view">
-                  <div className="card-view__label">Your card</div>
+                  <div className="card-view__label">Ваша карта</div>
                   <div className="card-view__name">{roleInfo.cardName}</div>
                   {roleInfo.elixir != null && (
-                    <p className="card-view__elixir">Elixir: {roleInfo.elixir}</p>
+                    <p className="card-view__elixir">Эликсир: {roleInfo.elixir}</p>
                   )}
                   {roleInfo.imageUrl ? (
                     <img
@@ -805,7 +804,7 @@ export default function App() {
                     />
                   ) : (
                     <div className="card-view__placeholder">
-                      No card image for this card.
+                      Нет картинки для этой карты.
                     </div>
                   )}
                 </div>
@@ -819,7 +818,7 @@ export default function App() {
                 disabled={busy !== null}
                 onClick={startGame}
               >
-                {busy === "start" ? "Starting…" : "Start game"}
+                {busy === "start" ? "Запуск…" : "Начать игру"}
               </button>
               <button
                 type="button"
@@ -832,23 +831,27 @@ export default function App() {
                 onClick={getRole}
                 title={
                   gamePhase !== "running"
-                    ? "Available after the host starts the game"
+                    ? "Доступно после старта матча хостом"
                     : undefined
                 }
               >
                 {busy === "role"
-                  ? "Loading…"
+                  ? "Загрузка…"
                   : gamePhase !== "running"
-                    ? "Reveal my card (after start)"
-                    : "Reveal my card"}
+                    ? "Показать карту (после старта)"
+                    : "Показать карту"}
               </button>
             </div>
           </section>
         )}
 
         <p className="footer-note">
-          Player ID and room are saved locally — refresh keeps you in the room.
-          API: <span className="footer-note__api">{API_URL}</span>
+          ID игрока и комната хранятся локально — обновление страницы не выбросит
+          из комнаты.
+          API:{" "}
+          <a href={`${API_URL}/docs`} className="footer-note__api">{API_URL}/docs</a>{" "}
+          Open Source:{" "}<a href="https://github.com/Robgen49/ClashRoyaleImposter" className="footer-note__api">Frontend</a> {" "}
+          <a href="https://github.com/MarselKrankd/clashRoyale_Imposter" className="footer-note__api">Backend</a>
         </p>
       </div>
     </div>
