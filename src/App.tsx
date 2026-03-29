@@ -64,11 +64,38 @@ function extractRoleInfo(data: any): RoleInfo {
   };
 }
 
-function copyText(text: string, onDone: (msg: string) => void) {
-  void navigator.clipboard.writeText(text).then(
-    () => onDone("Copied to clipboard."),
-    () => onDone("Could not copy."),
-  );
+async function copyText(text: string, onDone: (msg: string) => void) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      onDone("Copied to clipboard.");
+      return;
+    }
+  } catch {
+    // небезопасный контекст (HTTP), отказ разрешения и т.п.
+  }
+
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    onDone(
+      ok
+        ? "Copied to clipboard."
+        : "Could not copy — select the text manually.",
+    );
+  } catch {
+    onDone("Could not copy.");
+  }
 }
 
 export default function App() {
